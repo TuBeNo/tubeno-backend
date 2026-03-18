@@ -1,22 +1,19 @@
 
-import { sessions } from "./start.js";
+import { getIfAlive /*, del */ } from "../_mem.js";
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   const { device } = req.query;
+  if (!device) return res.status(400).send("Mangler device");
 
-  if (!sessions[device]) {
-    return res.status(400).send("Ugyldig device ID");
-  }
+  const sess = getIfAlive(`sess:${device}`);
+  if (!sess) return res.json({ status: "pending" }); // ikke startet/utløpt
 
-  const session = sessions[device];
-
-  if (session.status === "pending") {
+  if (sess.status !== "done") {
     return res.json({ status: "pending" });
   }
 
-  return res.json({
-    status: "done",
-    token: session.token
-  });
+  // Hvis du vil at token bare kan hentes én gang, kan du slette etterpå:
+  // del(`sess:${device}`);
+
+  return res.json({ status: "done", token: sess.token });
 }
-``
