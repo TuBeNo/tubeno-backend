@@ -1,5 +1,4 @@
 
-// api/callback.js - Stateless QR Login (viser ferdig poll-lenke)
 import crypto from "crypto";
 
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
@@ -27,9 +26,11 @@ export default async function handler(req, res) {
     const [deviceId, ts, verifier, signature] = parts;
 
     const checkSig = sign(deviceId, ts, verifier);
-    if (checkSig !== signature) return res.status(400).send("Signatur verifisering feilet");
+    if (checkSig !== signature) {
+      return res.status(400).send("Signatur verifisering feilet");
+    }
 
-    // code → tokens
+    // code → token
     const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
@@ -42,32 +43,14 @@ export default async function handler(req, res) {
       })
     });
 
-    if (!tokenRes.ok) {
-      const txt = await tokenRes.text();
-      return res.status(500).send("Feil ved token-bytte: " + txt);
-    }
-
     const tokens = await tokenRes.json();
-    const token64 = Buffer.from(JSON.stringify(tokens)).toString("base64");
-    const pollUrl = `${BASE}/api/device/poll?token=${encodeURIComponent(token64)}`;
 
-    // Enkel HTML som viser ferdig lenke
-    return res
-      .status(200)
-      .send(`
-        <html>
-        <body style="font-family: sans-serif">
-          <h2>Innlogging fullført ✅</h2>
-          <p>Du kan gå tilbake til TuBeNo‑enheten.<br/>
-             For test i nettleser: klikk poll-lenken under.</p>
-          <p><a href="${pollUrl}">${pollUrl}</a></p>
-          <details>
-            <summary>Vis token (base64)</summary>
-            <pre style="white-space: pre-wrap; word-break: break-all;">${token64}</pre>
-          </details>
-        </body>
-        </html>
-      `);
+    // base64 token
+    const token64 = Buffer.from(JSON.stringify(tokens)).toString("base64");
+
+    // ⭐ NYTT → Redirect til poll-endpoint MED token
+    return res.redirect(`${BASE}/api/device/poll?token=${encodeURIComponent(token64)}`);
+
   } catch (err) {
     console.error("CALLBACK FEIL:", err);
     return res.status(500).send("Uventet feil i /api/callback");
