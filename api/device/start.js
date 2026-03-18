@@ -1,20 +1,15 @@
 
-let sessions = {};
+import crypto from "crypto";
+import { setWithTTL } from "../_mem.js";
+
+const BASE = "https://tubeno-backend.vercel.app"; // endre senere hvis du bruker eget domene
 
 export default async function handler(req, res) {
   const deviceId = crypto.randomUUID();
+  // Lag "pending"-sesjon i 5 minutter
+  setWithTTL(`sess:${deviceId}`, { status: "pending" }, 300);
 
-  sessions[deviceId] = {
-    status: "pending",
-    token: null
-  };
+  const loginUrl = `${BASE}/api/login?device=${encodeURIComponent(deviceId)}`;
 
-  const loginUrl = `https://tubeno-backend.vercel.app/api/login?device=${deviceId}`;
-
-  res.status(200).json({
-    deviceId,
-    loginUrl
-  });
+  res.status(200).json({ deviceId, loginUrl });
 }
-
-export { sessions };
