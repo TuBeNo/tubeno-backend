@@ -1,31 +1,42 @@
 
-import { sessions } from "./device/start.js";
+import { getIfAlive, setWithTTL } from "./_mem.js";
+
+const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
+const REDIRECT_URI = "https://tubeno-backend.vercel.app/api/callback";
 
 export default async function handler(req, res) {
-  const { code, state } = req.query;
+  const { code, state, error } = req.query;
+  if (error) return res.status(400).send("Spotify feil: " + error);
+  if (!code || !state) return res.status(400).send("Mangler code/state");
 
-  if (!sessions[state]) {
-    return res.status(400).send("Ugyldig session");
+  const sess = getIfAlive(`sess:${state}`);
+  if (!sess || !sess.verifier) {
+    return res.status(400).send("Ugyldig/utløpt session");
   }
 
-  const verifier = sessions[state].verifier;
-
+  // Bytt code → tokens
   const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: process.env.SPOTIFY_CLIENT_ID,
       grant_type: "authorization_code",
-      redirect_uri: "https://tubeno-backend.vercel.app/api/callback",
       code,
-      code_verifier: verifier
+      redirect_uri: REDIRECT_URI,
+      client_id: CLIENT_ID,
+      code_verifier: sess.verifier
     })
   });
 
-  const data = await tokenRes.json();
+  if (!tokenRes.ok) {
+    const txt = await tokenRes.text();
+    return res.status(500).send("Token exchange feilet: " + txt);
+  }
 
-  sessions[state].status = "done";
-  sessions[state].token = data;
+  const tokens = await tokenRes.json();
 
+  // Marker "done" og legg inn tokens (gjør de tilgjengelige i 60 min)
+  setWithTTL(`sess:${state}`, { status: "done", token: tokens }, 3600);
+
+  // En enkel bekreftelse til brukeren på telefonen
   return res.send("Innlogging fullført! Du kan gå tilbake til TuBeNo‑enheten.");
 }
