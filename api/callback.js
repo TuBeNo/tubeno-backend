@@ -1,15 +1,12 @@
 
-// api/callback.js - Stateless QR Login
-// Tar imot Spotify code + state, validerer signatur og bytter code→token
-// Ingen database. Ingen lagring. Token leveres i /api/device/poll som base64.
-
+// api/callback.js - Stateless QR Login (viser ferdig poll-lenke)
 import crypto from "crypto";
 
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SECRET = process.env.SESSION_SECRET;
-const REDIRECT_URI = "https://tubeno-backend.vercel.app/api/callback";
+const BASE = "https://tubeno-backend.vercel.app";
+const REDIRECT_URI = `${BASE}/api/callback`;
 
-// HMAC signering må være identisk med /api/login og /api/device/start
 function sign(deviceId, ts, verifier) {
   return crypto
     .createHmac("sha256", SECRET)
@@ -21,28 +18,18 @@ export default async function handler(req, res) {
   try {
     const { code, state, error } = req.query;
 
-    if (error) {
-      return res.status(400).send("Spotify-feil: " + error);
-    }
-    if (!code || !state) {
-      return res.status(400).send("Mangler code/state fra Spotify");
-    }
+    if (error) return res.status(400).send("Spotify-feil: " + error);
+    if (!code || !state) return res.status(400).send("Mangler code/state");
 
-    // State ser slik ut: deviceId:ts:verifier:signature
     const parts = state.split(":");
-    if (parts.length !== 4) {
-      return res.status(400).send("Ugyldig state");
-    }
+    if (parts.length !== 4) return res.status(400).send("Ugyldig state");
 
     const [deviceId, ts, verifier, signature] = parts;
 
-    // Valider signaturen
     const checkSig = sign(deviceId, ts, verifier);
-    if (checkSig !== signature) {
-      return res.status(400).send("Signatur verifisering feilet");
-    }
+    if (checkSig !== signature) return res.status(400).send("Signatur verifisering feilet");
 
-    // Bytt code → token
+    // code → tokens
     const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
       headers: {"Content-Type": "application/x-www-form-urlencoded"},
@@ -61,18 +48,26 @@ export default async function handler(req, res) {
     }
 
     const tokens = await tokenRes.json();
-
-    // KLART: token pakkes inn i base64 og sendes som URL for poll-endpoint
     const token64 = Buffer.from(JSON.stringify(tokens)).toString("base64");
+    const pollUrl = `${BASE}/api/device/poll?token=${encodeURIComponent(token64)}`;
 
-    const pollUrl = `https://tubeno-backend.vercel.app/api/device/poll?token=${token64}`;
-
-    return res.send(
-      "Innlogging fullført!<br><br>" +
-      "Nå kan du gå tilbake til TuBeNo‑enheten.<br><br>" +
-      "(Den henter token via /api/device/poll)"
-    );
-
+    // Enkel HTML som viser ferdig lenke
+    return res
+      .status(200)
+      .send(`
+        <html>
+        <body style="font-family: sans-serif">
+          <h2>Innlogging fullført ✅</h2>
+          <p>Du kan gå tilbake til TuBeNo‑enheten.<br/>
+             For test i nettleser: klikk poll-lenken under.</p>
+          <p><a href="${pollUrl}">${pollUrl}</a></p>
+          <details>
+            <summary>Vis token (base64)</summary>
+            <pre style="white-space: pre-wrap; word-break: break-all;">${token64}</pre>
+          </details>
+        </body>
+        </html>
+      `);
   } catch (err) {
     console.error("CALLBACK FEIL:", err);
     return res.status(500).send("Uventet feil i /api/callback");
